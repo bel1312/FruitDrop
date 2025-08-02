@@ -24,6 +24,11 @@ class FruitGame {
         this.gameOver = false;
         this.mouseX = 0;
         this.mouseY = 0;
+        this.activeColors = 3;
+        this.colorUpgradeScore = 100;
+        this.deathLine = this.canvas.height - 120;
+        this.gameTime = 0;
+        this.colorCarrier = null;
         
         this.init();
     }
@@ -46,7 +51,7 @@ class FruitGame {
             for (let col = 0; col < this.cols; col++) {
                 if (row < 5 && Math.random() < 0.7) {
                     this.grid[row][col] = {
-                        type: this.fruitTypes[Math.floor(Math.random() * this.fruitTypes.length)],
+                        type: this.fruitTypes[Math.floor(Math.random() * this.activeColors)],
                         x: this.getX(row, col),
                         y: this.getY(row)
                     };
@@ -67,7 +72,7 @@ class FruitGame {
     }
     
     updateCurrentFruit() {
-        this.currentFruit = this.fruitTypes[Math.floor(Math.random() * this.fruitTypes.length)];
+        this.currentFruit = this.fruitTypes[Math.floor(Math.random() * this.activeColors)];
         const fruitElement = document.getElementById('currentFruit');
         fruitElement.className = `fruit ${this.currentFruit}`;
         fruitElement.style.background = `radial-gradient(circle at 30% 30%, ${this.lightenColor(this.fruitColors[this.currentFruit], 20)}, ${this.fruitColors[this.currentFruit]})`;
@@ -211,6 +216,9 @@ class FruitGame {
             this.grid[row][col] = null;
         });
         this.score += matches.length * 10;
+        
+
+        
         document.getElementById('score').textContent = this.score;
         this.removeFloatingFruits();
     }
@@ -226,16 +234,20 @@ class FruitGame {
         }
         
         // Remove unconnected fruits
+        let removed = 0;
         for (let row = 1; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
                 if (this.grid[row][col] && !connected.has(`${row},${col}`)) {
                     this.grid[row][col] = null;
-                    this.score += 5;
+                    removed++;
                 }
             }
         }
         
-        document.getElementById('score').textContent = this.score;
+        if (removed > 0) {
+            this.score += removed * 5;
+            document.getElementById('score').textContent = this.score;
+        }
     }
     
     markConnected(row, col, connected) {
@@ -262,7 +274,7 @@ class FruitGame {
         for (let col = 0; col < this.cols; col++) {
             if (Math.random() < 0.6) {
                 this.grid[0][col] = {
-                    type: this.fruitTypes[Math.floor(Math.random() * this.fruitTypes.length)],
+                    type: this.fruitTypes[Math.floor(Math.random() * this.activeColors)],
                     x: this.getX(0, col),
                     y: this.getY(0)
                 };
@@ -275,10 +287,21 @@ class FruitGame {
     update() {
         if (this.gameOver) return;
         
+        this.gameTime++;
         this.dropTimer++;
         if (this.dropTimer >= this.dropInterval) {
             this.dropGrid();
             this.dropTimer = 0;
+        }
+        
+        // Spawn color carrier after 3 minutes
+        if (this.gameTime === 10800 && this.activeColors < this.fruitTypes.length && !this.colorCarrier) {
+            this.spawnColorCarrier();
+        }
+        
+        // Update color carrier
+        if (this.colorCarrier) {
+            this.updateColorCarrier();
         }
         
         if (this.projectile) {
@@ -358,11 +381,54 @@ class FruitGame {
     }
     
     checkGameOver() {
-        for (let col = 0; col < this.cols; col++) {
-            if (this.grid[this.rows - 3][col]) {
-                this.gameOver = true;
-                break;
+        for (let row = 0; row < this.rows; row++) {
+            for (let col = 0; col < this.cols; col++) {
+                if (this.grid[row][col] && this.grid[row][col].y >= this.deathLine) {
+                    this.gameOver = true;
+                    return;
+                }
             }
+        }
+    }
+    
+    spawnColorCarrier() {
+        this.colorCarrier = {
+            x: Math.random() * (this.canvas.width - 100) + 50,
+            y: -50,
+            vy: 1.5,
+            zigzagTimer: 0,
+            type: this.fruitTypes[this.activeColors],
+            size: 30
+        };
+    }
+    
+    updateColorCarrier() {
+        this.colorCarrier.y += this.colorCarrier.vy;
+        this.colorCarrier.zigzagTimer++;
+        this.colorCarrier.x += Math.sin(this.colorCarrier.zigzagTimer * 0.1) * 3;
+        
+        // Check collision with projectile
+        if (this.projectile) {
+            const dx = this.projectile.x - this.colorCarrier.x;
+            const dy = this.projectile.y - this.colorCarrier.y;
+            if (Math.sqrt(dx * dx + dy * dy) < this.fruitSize + this.colorCarrier.size) {
+                this.colorCarrier = null;
+                this.projectile = null;
+                this.score += 50;
+                document.getElementById('score').textContent = this.score;
+                return;
+            }
+        }
+        
+        // Check if reached death line
+        if (this.colorCarrier.y >= this.deathLine) {
+            this.activeColors++;
+            this.colorCarrier = null;
+        }
+        
+        // Remove if off screen
+        if (this.colorCarrier.y > this.canvas.height + 50) {
+            this.colorCarrier = null;
         }
     }
     
@@ -409,13 +475,15 @@ class FruitGame {
         // Draw guideline
         this.drawGuideline();
         
-        // Draw game over line
+        // Draw death line
         this.ctx.strokeStyle = '#ff0000';
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 3;
+        this.ctx.setLineDash([10, 5]);
         this.ctx.beginPath();
-        this.ctx.moveTo(0, this.getY(this.rows - 3));
-        this.ctx.lineTo(this.canvas.width, this.getY(this.rows - 3));
+        this.ctx.moveTo(0, this.deathLine);
+        this.ctx.lineTo(this.canvas.width, this.deathLine);
         this.ctx.stroke();
+        this.ctx.setLineDash([]);
         
         // Draw grid
         for (let row = 0; row < this.rows; row++) {
@@ -429,6 +497,11 @@ class FruitGame {
         // Draw projectile
         if (this.projectile) {
             this.drawFruit(this.projectile.x, this.projectile.y, this.projectile.type);
+        }
+        
+        // Draw color carrier
+        if (this.colorCarrier) {
+            this.drawFruit(this.colorCarrier.x, this.colorCarrier.y, this.colorCarrier.type);
         }
         
         if (this.gameOver) {
