@@ -269,7 +269,10 @@ class FruitGame {
     }
     
     removeMatches(matches) {
-        // Create explosion effects
+        // Only remove if 3 or more matches
+        if (matches.length < 3) return;
+        
+        // Create explosion effects and remove matched fruits
         matches.forEach(({row, col}) => {
             const fruit = this.grid[row][col];
             this.createExplosion(fruit.x, fruit.y, this.fruitColors[fruit.type]);
@@ -279,44 +282,43 @@ class FruitGame {
         this.score += matches.length * 10;
         document.getElementById('score').textContent = this.score;
         
-        // Delay floating fruit removal to prevent random disappearances
-        setTimeout(() => this.removeFloatingFruits(), 100);
+        // Only remove floating fruits after matches are removed
+        this.removeFloatingFruits();
     }
     
     removeFloatingFruits() {
         const connected = new Set();
         
-        // Mark all fruits connected to top row
+        // Mark all fruits connected to top row (row 0)
         for (let col = 0; col < this.cols; col++) {
-            if (this.grid[0][col]) {
+            if (this.grid[0] && this.grid[0][col]) {
                 this.markConnected(0, col, connected);
             }
         }
         
-        // Animate falling fruits
+        // Find fruits that are not connected to top
         const toRemove = [];
-        for (let row = 1; row < this.rows; row++) {
+        for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
-                if (this.grid[row][col] && !connected.has(`${row},${col}`)) {
-                    const fruit = this.grid[row][col];
-                    this.animatingFruits.push({
-                        x: fruit.x,
-                        y: fruit.y,
-                        type: fruit.type,
-                        vy: 0,
-                        life: 60
-                    });
-                    toRemove.push({row, col});
+                if (this.grid[row] && this.grid[row][col] && !connected.has(`${row},${col}`)) {
+                    toRemove.push({row, col, fruit: this.grid[row][col]});
                 }
             }
         }
         
-        // Remove from grid
-        toRemove.forEach(({row, col}) => {
-            this.grid[row][col] = null;
-        });
-        
+        // Only remove if there are actually floating fruits
         if (toRemove.length > 0) {
+            toRemove.forEach(({row, col, fruit}) => {
+                this.animatingFruits.push({
+                    x: fruit.x,
+                    y: fruit.y,
+                    type: fruit.type,
+                    vy: 0,
+                    life: 60
+                });
+                this.grid[row][col] = null;
+            });
+            
             this.score += toRemove.length * 5;
             document.getElementById('score').textContent = this.score;
         }
@@ -324,7 +326,9 @@ class FruitGame {
     
     markConnected(row, col, connected) {
         const key = `${row},${col}`;
-        if (connected.has(key) || !this.grid[row] || !this.grid[row][col]) return;
+        if (connected.has(key) || row < 0 || row >= this.rows || col < 0 || col >= this.cols || !this.grid[row] || !this.grid[row][col]) {
+            return;
+        }
         
         connected.add(key);
         const neighbors = this.getNeighbors(row, col);
