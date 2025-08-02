@@ -29,6 +29,8 @@ class FruitGame {
         this.deathLine = this.canvas.height - 120;
         this.gameTime = 0;
         this.colorCarrier = null;
+        this.particles = [];
+        this.animatingFruits = [];
         
         this.init();
     }
@@ -102,55 +104,110 @@ class FruitGame {
         this.updateCurrentFruit();
     }
     
-    drawFruit(x, y, type) {
+    drawFruit(x, y, type, scale = 1, alpha = 1) {
+        this.ctx.save();
+        this.ctx.globalAlpha = alpha;
+        
+        const size = this.fruitSize * scale;
+        
         // Base fruit with realistic gradient
         const gradient = this.ctx.createRadialGradient(
-            x - this.fruitSize/2.5, y - this.fruitSize/2.5, 0,
-            x, y, this.fruitSize * 1.2
+            x - size/2.5, y - size/2.5, 0,
+            x, y, size * 1.2
         );
-        gradient.addColorStop(0, this.lightenColor(this.fruitColors[type], 40));
-        gradient.addColorStop(0.3, this.lightenColor(this.fruitColors[type], 20));
-        gradient.addColorStop(0.7, this.fruitColors[type]);
-        gradient.addColorStop(1, this.darkenColor(this.fruitColors[type], 30));
+        gradient.addColorStop(0, this.lightenColor(this.fruitColors[type], 50));
+        gradient.addColorStop(0.2, this.lightenColor(this.fruitColors[type], 30));
+        gradient.addColorStop(0.6, this.fruitColors[type]);
+        gradient.addColorStop(1, this.darkenColor(this.fruitColors[type], 40));
         
         this.ctx.fillStyle = gradient;
         this.ctx.beginPath();
-        this.ctx.arc(x, y, this.fruitSize, 0, Math.PI * 2);
+        this.ctx.arc(x, y, size, 0, Math.PI * 2);
         this.ctx.fill();
         
         // Fruit-specific details
         if (type === 'apple') {
             this.ctx.fillStyle = '#228B22';
-            this.ctx.fillRect(x - 2, y - this.fruitSize - 3, 4, 6);
+            this.ctx.fillRect(x - 2*scale, y - size - 3*scale, 4*scale, 6*scale);
             this.ctx.fillStyle = '#32CD32';
             this.ctx.beginPath();
-            this.ctx.ellipse(x + 3, y - this.fruitSize, 6, 3, Math.PI/4, 0, Math.PI * 2);
+            this.ctx.ellipse(x + 3*scale, y - size, 6*scale, 3*scale, Math.PI/4, 0, Math.PI * 2);
             this.ctx.fill();
         }
         
-        // Main highlight
+        // Animated highlight
+        const time = Date.now() * 0.003;
+        const highlightIntensity = 0.4 + Math.sin(time) * 0.2;
         const highlight = this.ctx.createRadialGradient(
-            x - this.fruitSize/2, y - this.fruitSize/2, 0,
-            x - this.fruitSize/3, y - this.fruitSize/3, this.fruitSize/2
+            x - size/2, y - size/2, 0,
+            x - size/3, y - size/3, size/2
         );
-        highlight.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+        highlight.addColorStop(0, `rgba(255, 255, 255, ${highlightIntensity})`);
         highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
         this.ctx.fillStyle = highlight;
         this.ctx.beginPath();
-        this.ctx.arc(x - this.fruitSize/3, y - this.fruitSize/3, this.fruitSize/3, 0, Math.PI * 2);
+        this.ctx.arc(x - size/3, y - size/3, size/3, 0, Math.PI * 2);
         this.ctx.fill();
         
         // Secondary shine
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
         this.ctx.beginPath();
-        this.ctx.arc(x + this.fruitSize/3, y + this.fruitSize/4, this.fruitSize/8, 0, Math.PI * 2);
+        this.ctx.arc(x + size/3, y + size/4, size/8, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Bottom shadow
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        // Bottom shadow with depth
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         this.ctx.beginPath();
-        this.ctx.ellipse(x, y + this.fruitSize/2, this.fruitSize/2, this.fruitSize/6, 0, 0, Math.PI * 2);
+        this.ctx.ellipse(x, y + size/2, size/2, size/6, 0, 0, Math.PI * 2);
         this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+    
+    createExplosion(x, y, color) {
+        for (let i = 0; i < 20; i++) {
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 15,
+                vy: (Math.random() - 0.5) * 15,
+                color: color,
+                life: 40,
+                maxLife: 40,
+                size: Math.random() * 8 + 3
+            });
+        }
+    }
+    
+    updateParticles() {
+        this.particles = this.particles.filter(particle => {
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.vy += 0.5;
+            particle.vx *= 0.98;
+            particle.life--;
+            
+            const alpha = particle.life / particle.maxLife;
+            this.ctx.fillStyle = particle.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.size * alpha, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            return particle.life > 0;
+        });
+    }
+    
+    updateAnimatingFruits() {
+        this.animatingFruits = this.animatingFruits.filter(fruit => {
+            fruit.vy += 0.8;
+            fruit.y += fruit.vy;
+            fruit.life--;
+            
+            const alpha = Math.max(0, fruit.life / 60);
+            this.drawFruit(fruit.x, fruit.y, fruit.type, 1, alpha);
+            
+            return fruit.life > 0 && fruit.y < this.canvas.height + 50;
+        });
     }
     
     lightenColor(color, percent) {
@@ -212,15 +269,18 @@ class FruitGame {
     }
     
     removeMatches(matches) {
+        // Create explosion effects
         matches.forEach(({row, col}) => {
+            const fruit = this.grid[row][col];
+            this.createExplosion(fruit.x, fruit.y, this.fruitColors[fruit.type]);
             this.grid[row][col] = null;
         });
+        
         this.score += matches.length * 10;
-        
-
-        
         document.getElementById('score').textContent = this.score;
-        this.removeFloatingFruits();
+        
+        // Delay floating fruit removal to prevent random disappearances
+        setTimeout(() => this.removeFloatingFruits(), 100);
     }
     
     removeFloatingFruits() {
@@ -233,19 +293,31 @@ class FruitGame {
             }
         }
         
-        // Remove unconnected fruits
-        let removed = 0;
+        // Animate falling fruits
+        const toRemove = [];
         for (let row = 1; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
                 if (this.grid[row][col] && !connected.has(`${row},${col}`)) {
-                    this.grid[row][col] = null;
-                    removed++;
+                    const fruit = this.grid[row][col];
+                    this.animatingFruits.push({
+                        x: fruit.x,
+                        y: fruit.y,
+                        type: fruit.type,
+                        vy: 0,
+                        life: 60
+                    });
+                    toRemove.push({row, col});
                 }
             }
         }
         
-        if (removed > 0) {
-            this.score += removed * 5;
+        // Remove from grid
+        toRemove.forEach(({row, col}) => {
+            this.grid[row][col] = null;
+        });
+        
+        if (toRemove.length > 0) {
+            this.score += toRemove.length * 5;
             document.getElementById('score').textContent = this.score;
         }
     }
@@ -405,13 +477,17 @@ class FruitGame {
     updateColorCarrier() {
         this.colorCarrier.y += this.colorCarrier.vy;
         this.colorCarrier.zigzagTimer++;
-        this.colorCarrier.x += Math.sin(this.colorCarrier.zigzagTimer * 0.1) * 3;
+        
+        // Zigzag across full width
+        const zigzagRange = this.canvas.width - 100;
+        this.colorCarrier.x = 50 + (Math.sin(this.colorCarrier.zigzagTimer * 0.05) + 1) * zigzagRange / 2;
         
         // Check collision with projectile
         if (this.projectile) {
             const dx = this.projectile.x - this.colorCarrier.x;
             const dy = this.projectile.y - this.colorCarrier.y;
             if (Math.sqrt(dx * dx + dy * dy) < this.fruitSize + this.colorCarrier.size) {
+                this.createExplosion(this.colorCarrier.x, this.colorCarrier.y, this.fruitColors[this.colorCarrier.type]);
                 this.colorCarrier = null;
                 this.projectile = null;
                 this.score += 50;
@@ -499,9 +575,19 @@ class FruitGame {
             this.drawFruit(this.projectile.x, this.projectile.y, this.projectile.type);
         }
         
-        // Draw color carrier
+        // Draw particles
+        this.updateParticles();
+        
+        // Draw animating fruits
+        this.updateAnimatingFruits();
+        
+        // Draw color carrier with glow
         if (this.colorCarrier) {
-            this.drawFruit(this.colorCarrier.x, this.colorCarrier.y, this.colorCarrier.type);
+            const glowSize = 1.3 + Math.sin(Date.now() * 0.01) * 0.2;
+            this.ctx.shadowColor = this.fruitColors[this.colorCarrier.type];
+            this.ctx.shadowBlur = 20;
+            this.drawFruit(this.colorCarrier.x, this.colorCarrier.y, this.colorCarrier.type, glowSize);
+            this.ctx.shadowBlur = 0;
         }
         
         if (this.gameOver) {
